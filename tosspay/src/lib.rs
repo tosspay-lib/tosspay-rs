@@ -1,5 +1,7 @@
 use std::{sync::mpsc, thread};
-static IDS: Vec<String> = Vec::new();
+
+use rand::Rng;
+static mut IDS: Vec<String> = Vec::new();
 static mut RES: TossPayJson = TossPayJson {
     resultType: String::new(),
     success: TossPaySuccess {
@@ -14,11 +16,13 @@ pub struct TossPay {
 }
 impl TossPay {
     pub fn new(toss_id: String) -> Self {
-        if unsafe { !IS_RUNNING } {
+        if unsafe { IS_RUNNING } {
             panic!("Can't create multiple tosspay!");
         }
+
         unsafe { IS_RUNNING = true }
         let toss_id_clone = toss_id.clone();
+
         tokio::spawn(async move {
             loop {
                 let toss_response = reqwest::Client::new()
@@ -43,6 +47,59 @@ impl TossPay {
 
         TossPay { toss_id }
     }
+
+    pub fn on_donate(&self, f: fn(TossPayData)) {
+        let fake_self = self.clone();
+        let mut old_datas = Vec::new();
+        tokio::spawn(async move {
+            loop {
+                let json = unsafe { RES.clone() };
+                let datas = json.success.data;
+                if old_datas.clone() != datas.clone() {
+                    let send_data = datas.clone();
+                    send_data
+                        .iter()
+                        .filter(|e| old_datas.iter().find(|x| x == e).is_none())
+                        .for_each(|x| f(x.to_owned()));
+                    // let send_data = datas.clone().iter().filter(|e| old_datas.clone().contains(e));
+                }
+                old_datas = datas.clone();
+                // let rng = rand
+                thread::sleep(std::time::Duration::from_secs(2));
+            }
+        });
+    }
+    pub fn on_pay(&self, f: fn(TossPayData)) -> String {
+        let code = gen_code();
+        let fake_code = code.clone();
+        unsafe {
+            IDS.push(code.clone());
+        }
+        let fake_self = self.clone();
+        let mut old_datas = Vec::new();
+        tokio::spawn(async move {
+            loop {
+                let json = unsafe { RES.clone() };
+                let datas = json.success.data;
+                if old_datas.clone() != datas.clone() {
+                    let send_data = datas.clone();
+                    send_data
+                        .iter()
+                        .filter(|e| old_datas.iter().find(|x| x == e).is_none())
+                        .for_each(|x| {
+                            if x.senderDisplayName == fake_code {
+                                f(x.to_owned())
+                            }
+                        });
+                }
+                old_datas = datas.clone();
+                // let rng = rand
+                thread::sleep(std::time::Duration::from_secs(2));
+            }
+        });
+        return code.clone();
+    }
+
     pub async fn trace_all(&self) -> mpsc::Receiver<TossPayData> {
         let fake_self = self.clone();
         let (sender, receiver) = mpsc::channel();
@@ -90,4 +147,19 @@ pub struct TossPayData {
     senderDisplayName: String,
     amount: usize,
     msg: String,
+}
+
+fn gen_code() -> String {
+    let mut rng = rand::thread_rng();
+    let code = format!(
+        "{}{}{}{}",
+        rng.gen_range(0..10),
+        rng.gen_range(0..10),
+        rng.gen_range(0..10),
+        rng.gen_range(0..10)
+    );
+    if unsafe { IDS.contains(&code) } {
+        return gen_code();
+    }
+    code
 }
