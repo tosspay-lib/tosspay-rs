@@ -7,4 +7,5 @@ target/
 
 # Nix Direnv
 .direnv
+flake.lock
 
