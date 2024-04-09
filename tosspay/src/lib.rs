@@ -49,7 +49,6 @@ impl TossPay {
     }
 
     pub fn on_donate(&self, f: fn(TossPayData)) {
-        let fake_self = self.clone();
         let mut old_datas = Vec::new();
         tokio::spawn(async move {
             loop {
@@ -69,33 +68,37 @@ impl TossPay {
             }
         });
     }
-    pub fn on_pay(&self, f: fn(TossPayData)) -> String {
+    pub fn on_payment(&self, f: fn(TossPayData) -> Result<(), ()>) -> String {
         let code = gen_code();
-        let fake_code = code.clone();
+        let mut fake_code = code.clone();
         unsafe {
             IDS.push(code.clone());
         }
-        let fake_self = self.clone();
         let mut old_datas = Vec::new();
-        tokio::spawn(async move {
-            loop {
-                let json = unsafe { RES.clone() };
-                let datas = json.success.data;
-                if old_datas.clone() != datas.clone() {
-                    let send_data = datas.clone();
-                    send_data
-                        .iter()
-                        .filter(|e| old_datas.iter().find(|x| x == e).is_none())
-                        .for_each(|x| {
-                            if x.senderDisplayName == fake_code {
-                                f(x.to_owned())
+        thread::spawn(move || 'scan_loop: loop {
+            let json = unsafe { RES.clone() };
+            let datas = json.success.data;
+            if old_datas.clone() != datas.clone() {
+                let send_data = datas.clone();
+                send_data
+                    .iter()
+                    .filter(|e| old_datas.iter().find(|x| x == e).is_none())
+                    .for_each(|x| {
+                        if x.senderDisplayName == fake_code {
+                            match f(x.to_owned()) {
+                                Ok(_) => {
+                                    fake_code = "".to_string();
+                                }
+                                Err(_) => {}
                             }
-                        });
+                        }
+                    });
+                if fake_code == "".to_string() {
+                    break 'scan_loop;
                 }
-                old_datas = datas.clone();
-                // let rng = rand
-                thread::sleep(std::time::Duration::from_secs(2));
             }
+            old_datas = datas.clone();
+            thread::sleep(std::time::Duration::from_secs(2));
         });
         return code.clone();
     }
@@ -144,15 +147,16 @@ pub struct TossPaySuccess {
 #[allow(non_snake_case)]
 #[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq, Clone)]
 pub struct TossPayData {
-    senderDisplayName: String,
-    amount: usize,
-    msg: String,
+    pub senderDisplayName: String,
+    pub amount: usize,
+    pub msg: String,
 }
 
 fn gen_code() -> String {
     let mut rng = rand::thread_rng();
     let code = format!(
-        "{}{}{}{}",
+        "{}{}{}{}{}",
+        rng.gen_range(0..10),
         rng.gen_range(0..10),
         rng.gen_range(0..10),
         rng.gen_range(0..10),
