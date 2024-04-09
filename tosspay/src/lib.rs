@@ -1,26 +1,34 @@
-use std::{sync::mpsc, thread};
+#[macro_use]
+extern crate lazy_static;
+
+use std::{
+    sync::{mpsc, Mutex},
+    thread,
+};
 
 use rand::Rng;
-static mut IDS: Vec<String> = Vec::new();
-static mut RES: TossPayJson = TossPayJson {
-    resultType: String::new(),
-    success: TossPaySuccess {
-        nextCursor: String::new(),
-        data: Vec::new(),
-    },
-};
-static mut IS_RUNNING: bool = false;
+lazy_static! {
+    static ref IS_RUNNING: Mutex<bool> = Mutex::new(false);
+    static ref RES: Mutex<TossPayJson> = Mutex::new(TossPayJson {
+        resultType: String::new(),
+        success: TossPaySuccess {
+            nextCursor: String::new(),
+            data: Vec::new(),
+        },
+    });
+    static ref IDS: Mutex<Vec<String>> = Mutex::new(Vec::new());
+}
 #[derive(Clone)]
 pub struct TossPay {
-    toss_id: String,
+    pub toss_id: String,
 }
 impl TossPay {
     pub fn new(toss_id: String) -> Self {
-        if unsafe { IS_RUNNING } {
+        if *IS_RUNNING.lock().unwrap() {
             panic!("Can't create multiple tosspay!");
         }
 
-        unsafe { IS_RUNNING = true }
+        *IS_RUNNING.lock().unwrap() = true;
         let toss_id_clone = toss_id.clone();
 
         tokio::spawn(async move {
@@ -38,9 +46,7 @@ impl TossPay {
                         .replace("null", "\"\""),
                 )
                 .unwrap();
-                unsafe {
-                    RES = json;
-                }
+                *RES.lock().unwrap() = json;
                 thread::sleep(std::time::Duration::from_secs(2));
             }
         });
@@ -52,7 +58,7 @@ impl TossPay {
         let mut old_datas = Vec::new();
         tokio::spawn(async move {
             loop {
-                let json = unsafe { RES.clone() };
+                let json = RES.lock().unwrap().clone();
                 let datas = json.success.data;
                 if old_datas.clone() != datas.clone() {
                     let send_data = datas.clone();
@@ -71,12 +77,10 @@ impl TossPay {
     pub fn on_payment(&self, f: fn(TossPayData) -> Result<(), ()>) -> String {
         let code = gen_code();
         let mut fake_code = code.clone();
-        unsafe {
-            IDS.push(code.clone());
-        }
+        IDS.lock().unwrap().push(code.clone());
         let mut old_datas = Vec::new();
         thread::spawn(move || 'scan_loop: loop {
-            let json = unsafe { RES.clone() };
+            let json = RES.lock().unwrap().clone();
             let datas = json.success.data;
             if old_datas.clone() != datas.clone() {
                 let send_data = datas.clone();
@@ -104,12 +108,11 @@ impl TossPay {
     }
 
     pub async fn trace_all(&self) -> mpsc::Receiver<TossPayData> {
-        let fake_self = self.clone();
         let (sender, receiver) = mpsc::channel();
         let mut old_datas = Vec::new();
         tokio::spawn(async move {
             loop {
-                let json = unsafe { RES.clone() };
+                let json = RES.lock().unwrap().clone();
                 let datas = json.success.data;
                 if old_datas.clone() != datas.clone() {
                     let send_data = datas.clone();
@@ -162,7 +165,7 @@ fn gen_code() -> String {
         rng.gen_range(0..10),
         rng.gen_range(0..10)
     );
-    if unsafe { IDS.contains(&code) } {
+    if IDS.lock().unwrap().contains(&code) {
         return gen_code();
     }
     code

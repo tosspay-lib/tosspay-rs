@@ -1,3 +1,4 @@
+use std::{thread::sleep, time::Duration};
 use tosspay::TossPay;
 #[tokio::main]
 async fn main() {
@@ -9,5 +10,7 @@ async fn main() {
             println!("nou");
         }
     });
-    loop {}
+    loop {
+        sleep(Duration::new(1, 0));
+    }
 }
