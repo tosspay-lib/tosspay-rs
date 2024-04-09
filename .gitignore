@@ -1,1 +1,10 @@
-/target
+
+# Rust.gitignore by ignofierplus
+debug/
+target/
+**/*.rs.bk
+*.pdb
+
+# Nix Direnv
+.direnv
+

@@ -919,6 +919,7 @@ dependencies = [
 name = "tosspay"
 version = "0.1.0"
 dependencies = [
+ "lazy_static",
  "rand",
  "reqwest",
  "serde",
